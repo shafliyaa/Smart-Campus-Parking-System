@@ -34,8 +34,23 @@ process_parking("ABC1234", "Student", "Open")
 process_parking("ABC1234", "Student", "Open")
 process_parking("PAA1234", "Student", "Staff")
 
+def view_violations():
+    db = connect_db()
 
+    cursor = db.cursor(dictionary=True)
+    cursor.execute("SELECT * from parking_violations")
 
+    records = cursor.fetchall()
 
+    print("========== PARKING VIOLATIONS ==========")
+    
+    for row in records:
 
+        print("Plate Number: ",row["plate_number"])
+        print("Role: ", row["user_role"])
+        print("Zone: ", row["parking_zone"])
+        print("Violation: ", row["violation_type"])
+        print("========================================")
 
+    cursor.close()
+    db.close()
