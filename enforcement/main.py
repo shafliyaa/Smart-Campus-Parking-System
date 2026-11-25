@@ -30,9 +30,6 @@ def process_parking(plate_number, role, zone):
     else:
         print("Parking Allowed")
 
-process_parking("ABC1234", "Student", "Open")
-process_parking("ABC1234", "Student", "Open")
-process_parking("PAA1234", "Student", "Staff")
 
 def view_violations():
     db = connect_db()
@@ -43,7 +40,7 @@ def view_violations():
     records = cursor.fetchall()
 
     print("========== PARKING VIOLATIONS ==========")
-    
+
     for row in records:
 
         print("Plate Number: ",row["plate_number"])
@@ -54,3 +51,18 @@ def view_violations():
 
     cursor.close()
     db.close()
+
+def update_violations(violation_id, new_status):
+    db = connect_db()
+    cursor = db.cursor()
+
+    cursor.execute("UPDATE parking_violations SET violation_status = %s WHERE violation_id = %s",(new_status, violation_id))
+
+    db.commit()
+
+    print("Violation status updated successfully!")
+
+    cursor.close()
+    db.close()
+
+update_violations(1, "Resolved")
