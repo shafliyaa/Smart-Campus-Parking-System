@@ -1,13 +1,8 @@
 import mysql.connector
 from database import connect_db
+from parking_rules import check_parking
 
-def record_violation():
-    # 1.Define variables
-    plate_number = "PAA1234"
-    user_role = "Student"
-    parking_zone = "Staff"
-    violation_type = "Unauthorized parking"
-
+def record_violation(plate_number, user_role, parking_zone, violation_type):
     # 2.Connect to database
     db = connect_db()
 
@@ -27,8 +22,17 @@ def record_violation():
     cursor.close()
     db.close()
 
-record_violation()
 
+def process_parking(plate_number, role, zone):
+    result = check_parking(role, zone)
+    if result == "Violation":
+        record_violation(plate_number, role, zone, result)
+    else:
+        print("Parking Allowed")
+
+process_parking("ABC1234", "Student", "Open")
+process_parking("ABC1234", "Student", "Open")
+process_parking("PAA1234", "Student", "Staff")
 
 
 

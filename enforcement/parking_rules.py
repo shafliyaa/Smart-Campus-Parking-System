@@ -8,7 +8,5 @@ def check_parking(role, zone):
 
     return result
 
-print(check_parking("Staff", "Staff"))
-print(check_parking("Student", "Staff"))
-print(check_parking("Student", "Open"))
+
 
