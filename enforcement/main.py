@@ -66,3 +66,14 @@ def update_violations(violation_id, new_status):
     db.close()
 
 update_violations(1, "Resolved")
+
+def delete_violation(violation_id,):
+    db = connect_db()
+
+    cursor = db.cursor()
+
+    cursor.execute("DELETE FROM parking_violations WHERE violation_id = %s", (violation_id))
+    print("The records deleted successfully")
+    db.commit()
+    cursor.close()
+    db.close()
