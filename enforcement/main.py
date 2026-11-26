@@ -1,27 +1,10 @@
 import mysql.connector
 from database import connect_db
 from parking_rules import check_parking
+from violations import record_violation, view_violations, update_violations, delete_violation
+from datetime import datetime, timedelta
 
-def record_violation(plate_number, user_role, parking_zone, violation_type):
-    # 2.Connect to database
-    db = connect_db()
-
-    # 3.Create cursor
-    cursor = db.cursor()
-
-    # 4.Execute INSERT statement
-    cursor.execute("INSERT INTO parking_violations (plate_number, user_role, parking_zone, violation_type) VALUES (%s, %s, %s, %s)", (plate_number, user_role, parking_zone, violation_type))
-
-    # 5.Commit changes
-    db.commit()
-
-    # 6.Display success message
-    print("Violation recorded successfully!")
-
-    # 7.Close cursor and connection
-    cursor.close()
-    db.close()
-
+grace_periods = {}
 
 def process_parking(plate_number, role, zone):
     result = check_parking(role, zone)
@@ -31,38 +14,87 @@ def process_parking(plate_number, role, zone):
         print("Parking Allowed")
 
 
-def view_violations():
-    db = connect_db()
+print("========== SMART CAMPUS PARKING SYSTEM ==========\n")
+print("1. Check parking eligibility")
+print("2. View violations")
+print("3. Update violations status")
+print("4. Delete violation status")
+print("5. Exit")
 
-    cursor = db.cursor(dictionary=True)
-    cursor.execute("SELECT * from parking_violations")
+def main_menu():
+    while True: 
+        choice = input("Enter your choice: ")
 
-    records = cursor.fetchall()
+        if choice == "1":
+            plate_number = input("Enter plate number: ")
+            role = input("Enter role: ")
+            zone = input("Enter zone: ")
+            process_parking(plate_number, role, zone)
+            
+        elif choice == "2":
+            view_violations()
 
-    print("========== PARKING VIOLATIONS ==========")
+        elif choice == "3":
+            violation_id = int(input("Enter violation_id: "))
+            new_status = input("Enter new status: ")
+            update_violations(violation_id,new_status)
 
-    for row in records:
+        elif choice == "4":
+            violation_id = int(input("Enter violation_id: "))
+            delete_violation(violation_id)
 
-        print("Plate Number: ",row["plate_number"])
-        print("Role: ", row["user_role"])
-        print("Zone: ", row["parking_zone"])
-        print("Violation: ", row["violation_type"])
-        print("========================================")
+        elif choice == "5":
+            print("Exiting system...")
+            break
 
-    cursor.close()
-    db.close()
+        else:
+            print("Invalid choice. Please try again.")
+            
+def start_grace_period(plate_number, role, zone):
+    curr_time = datetime.now()
+    grace_periods[plate_number] = {
+        "start_time": curr_time,
+        "role": role,
+        "zone": zone
+    }
 
-def update_violations(violation_id, new_status):
-    db = connect_db()
-    cursor = db.cursor()
+    print("You have 10 minutes to move your vehicles before your car being clamp")
 
-    cursor.execute("UPDATE parking_violations SET violation_status = %s WHERE violation_id = %s",(new_status, violation_id))
+def check_grace_period(plate_number):
+    grace_period = timedelta(minutes=10)
+    start_time = grace_periods[plate_number]["start_time"]
 
-    db.commit()
+    elapsed_time = datetime.now() - start_time
 
-    print("Violation status updated successfully!")
+    if elapsed_time < grace_period :
+        return "Active"
+    else:
+        return "Expired"
 
-    cursor.close()
-    db.close()
+def cancel_grace_period(plate_number):
+    if plate_number in grace_periods:
+        grace_periods.pop(plate_number)
+        print("Grace period cancelled. Vehicle has left.")
+    else:
+        print("No active grace period found.")
 
-update_violations(1, "Resolved")
+def enforce_parking(plate_number, role, zone):
+    result = check_parking(role, zone)
+
+    if result == "Allowed":
+        print("Parking Allowed")
+    else:
+        start_grace_period(plate_number, role, zone)
+
+def enforce_grace_parking(plate_number, role, zone):
+    result = check_grace_period(plate_number)
+
+    if result == "Expired":
+        record_violation(plate_number, role, zone, "Unauthorized parking")
+        grace_periods.pop(plate_number)
+    else:
+        print("You still have time to move your car.")
+
+grace_periods["ABC1234"] = datetime.now() - timedelta(minutes=11)
+
+enforce_grace_parking("ABC1234", "Student", "Staff")
