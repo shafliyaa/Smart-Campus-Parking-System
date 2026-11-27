@@ -1,18 +1,9 @@
-import mysql.connector
 from database import connect_db
-from parking_rules import check_parking
-from violations import record_violation, view_violations, update_violations, delete_violation
+from enforcement.parking_rules import check_parking
+from enforcement.violations import record_violation, view_violations, update_violations, delete_violation
 from datetime import datetime, timedelta
 
 grace_periods = {}
-
-def process_parking(plate_number, role, zone):
-    result = check_parking(role, zone)
-    if result == "Violation":
-        record_violation(plate_number, role, zone, result)
-    else:
-        print("Parking Allowed")
-
 
 print("========== SMART CAMPUS PARKING SYSTEM ==========\n")
 print("1. Check parking eligibility")
@@ -29,7 +20,7 @@ def main_menu():
             plate_number = input("Enter plate number: ")
             role = input("Enter role: ")
             zone = input("Enter zone: ")
-            process_parking(plate_number, role, zone)
+            enforce_parking(plate_number, role, zone)
             
         elif choice == "2":
             view_violations()
@@ -86,15 +77,23 @@ def enforce_parking(plate_number, role, zone):
     else:
         start_grace_period(plate_number, role, zone)
 
-def enforce_grace_parking(plate_number, role, zone):
+def enforce_grace_parking(plate_number):
     result = check_grace_period(plate_number)
+    details = grace_periods[plate_number] #to retrieve details
 
     if result == "Expired":
-        record_violation(plate_number, role, zone, "Unauthorized parking")
+        record_violation(plate_number, details["role"], details["zone"], "Unauthorized parking")
         grace_periods.pop(plate_number)
     else:
         print("You still have time to move your car.")
 
-grace_periods["ABC1234"] = datetime.now() - timedelta(minutes=11)
+#main_menu()
 
-enforce_grace_parking("ABC1234", "Student", "Staff")
+# Test 2: Start grace period
+enforce_parking("XYZ1234", "Student", "Staff")
+
+# Test 3: Simulate 11 minutes passing
+grace_periods["XYZ1234"]["start_time"] = datetime.now() - timedelta(minutes=11)
+
+# Check expired grace period
+enforce_grace_parking("XYZ1234")
