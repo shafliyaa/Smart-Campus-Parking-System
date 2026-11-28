@@ -2,6 +2,8 @@ from database import connect_db
 from enforcement.parking_rules import check_parking
 from enforcement.violations import record_violation, view_violations, update_violations, delete_violation
 from datetime import datetime, timedelta
+import time 
+import threading
 
 grace_periods = {}
 
@@ -41,15 +43,79 @@ def main_menu():
         else:
             print("Invalid choice. Please try again.")
             
+
 def start_grace_period(plate_number, role, zone):
     curr_time = datetime.now()
-    grace_periods[plate_number] = {
-        "start_time": curr_time,
-        "role": role,
-        "zone": zone
-    }
 
-    print("You have 10 minutes to move your vehicles before your car being clamp")
+    db = connect_db()
+    cursor = db.cursor()
+
+    cursor.execute(
+        "SELECT * FROM grace_periods WHERE plate_number = %s",
+        (plate_number,)
+    )
+
+    existing_record = cursor.fetchone()
+
+    if existing_record:
+        # Index [2] represents parking_zone
+        existing_zone = existing_record[2]
+
+        if existing_zone == zone:
+            print("Vehicle already has an active grace period in this zone.")
+
+        else:
+            cursor.execute(
+                """UPDATE grace_periods
+                   SET start_time = %s,
+                       user_role = %s,
+                       parking_zone = %s,
+                       final_warning_sent = %s
+                   WHERE plate_number = %s""",
+                (curr_time, role, zone, False, plate_number)
+            )
+
+            db.commit()
+
+            grace_periods[plate_number] = {
+                "start_time": curr_time,
+                "role": role,
+                "zone": zone,
+                "final_warning_sent": False
+            }
+
+            print(
+                f"WARNING: Vehicle {plate_number} has entered "
+                "a different restricted zone. "
+                "New 10-minute grace period started."
+            )
+
+    else:
+        cursor.execute(
+            """INSERT INTO grace_periods
+               (plate_number, start_time, user_role,
+                parking_zone, final_warning_sent)
+               VALUES (%s, %s, %s, %s, %s)""",
+            (plate_number, curr_time, role, zone, False)
+        )
+
+        db.commit()
+
+        grace_periods[plate_number] = {
+            "start_time": curr_time,
+            "role": role,
+            "zone": zone,
+            "final_warning_sent": False
+        }
+
+        print(
+            f"WARNING: Unauthorised parking detected! "
+            f"Vehicle {plate_number} has 10 minutes to move."
+        )
+
+    cursor.close()
+    db.close()
+
 
 def check_grace_period(plate_number):
     grace_period = timedelta(minutes=10)
@@ -57,12 +123,44 @@ def check_grace_period(plate_number):
 
     elapsed_time = datetime.now() - start_time
 
+    if elapsed_time >= timedelta(minutes=8) and grace_periods[plate_number]["final_warning_sent"] == False :
+        grace_periods[plate_number]["final_warning_sent"] = True
+
+        db = connect_db()
+        cursor = db.cursor()
+
+        cursor.execute(
+            """UPDATE grace_periods
+            SET final_warning_sent = TRUE
+            WHERE plate_number = %s""",
+            (plate_number,)
+        )
+
+        db.commit()
+        cursor.close()
+        db.close()
+        print(f"WARNING: Unauthorised parking detected! Vehicle {plate_number} has 2 minutes remain to move.")
+        
+
     if elapsed_time < grace_period :
         return "Active"
     else:
         return "Expired"
 
 def cancel_grace_period(plate_number):
+    db = connect_db()
+    cursor = db.cursor()
+    cursor.execute(
+        "DELETE FROM grace_periods WHERE plate_number = %s", 
+        (plate_number,))
+    if cursor.rowcount > 0:
+        print("Grace period record deleted from database.")
+    else:
+        print("No grace period record found in database.")
+    db.commit()
+    cursor.close()
+    db.close()
+
     if plate_number in grace_periods:
         grace_periods.pop(plate_number)
         print("Grace period cancelled. Vehicle has left.")
@@ -74,26 +172,74 @@ def enforce_parking(plate_number, role, zone):
 
     if result == "Allowed":
         print("Parking Allowed")
+    elif role == "Visitor":
+        record_violation(plate_number, role, zone, "Unauthorized parking - Immediate clamping")
+        print("Visitor parking violation detected. JK will clamp the vehicle immediately.")
     else:
         start_grace_period(plate_number, role, zone)
 
+#Check expired grace period
 def enforce_grace_parking(plate_number):
     result = check_grace_period(plate_number)
-    details = grace_periods[plate_number] #to retrieve details
 
     if result == "Expired":
+        details = grace_periods[plate_number] #to retrieve details
         record_violation(plate_number, details["role"], details["zone"], "Unauthorized parking")
+
+        db = connect_db()
+        cursor = db.cursor()
+        cursor.execute("DELETE FROM grace_periods WHERE plate_number = %s", (plate_number,))
+        db.commit()
+        cursor.close()
+        db.close()
+
         grace_periods.pop(plate_number)
-    else:
-        print("You still have time to move your car.")
+    
 
-#main_menu()
+def check_all_grace_periods():
+    for plate_number in list(grace_periods):
+        result = check_grace_period(plate_number)
+        if result == "Expired":
+            enforce_grace_parking(plate_number)
+        '''else:
+            print("Vehicle still have time to move the car.")'''
 
-# Test 2: Start grace period
-enforce_parking("XYZ1234", "Student", "Staff")
+def automatic_grace_monitor():
+    while True:
+        check_all_grace_periods()
+        time.sleep(5) #tell python to pause for 5 sec
 
-# Test 3: Simulate 11 minutes passing
-grace_periods["XYZ1234"]["start_time"] = datetime.now() - timedelta(minutes=11)
+def load_grace_periods():
+    db = connect_db()
+    cursor = db.cursor()
 
-# Check expired grace period
-enforce_grace_parking("XYZ1234")
+    cursor.execute(
+        "SELECT plate_number, start_time, user_role, parking_zone, final_warning_sent FROM grace_periods"
+    )
+
+    records = cursor.fetchall()
+
+    for row in records: 
+        plate_number = row[0]
+
+        grace_periods[plate_number] = {
+            "start_time": row[1],
+            "role": row[2],
+            "zone": row[3],
+            "final_warning_sent": bool(row[4])
+        }
+
+    cursor.close()
+    db.close()
+
+    print(f"{len(grace_periods)} active grace period(s) loaded from database.")
+
+load_grace_periods()
+
+monitor_thread = threading.Thread(
+    target=automatic_grace_monitor,
+    daemon=True
+)
+monitor_thread.start()
+
+main_menu()
