@@ -1,1 +1,1 @@
-Smart Campus Parking System
+SMART CAMPUS PARKING SYSTEM
